@@ -67,23 +67,35 @@ class PredictionService:
             for model_name, filename in model_files.items():
                 fpath = os.path.join(self.model_dir, filename)
                 if os.path.exists(fpath):
-                    self.models[model_name] = joblib.load(fpath)
-                    print(f"[PredictionService] Successfully loaded '{model_name}' from {filename}")
+                    try:
+                        self.models[model_name] = joblib.load(fpath)
+                        print(f"[PredictionService] Successfully loaded '{model_name}' from {filename}")
+                    except Exception as me:
+                        print(f"[PredictionService] Failed loading '{model_name}': {me}")
 
-            fallback_model_path = os.path.join(self.model_dir, "loan_default_model.pkl")
+            fallback_model_path = os.path.join(self.model_dir, "loan_default.pkl")
             if not self.models and os.path.exists(fallback_model_path):
-                self.models["Logistic Regression"] = joblib.load(fallback_model_path)
+                try:
+                    self.models["Logistic Regression"] = joblib.load(fallback_model_path)
+                except Exception as fe:
+                    print(f"[PredictionService] Failed loading fallback model: {fe}")
 
             if os.path.exists(self.pipeline_path):
-                self.pipeline = joblib.load(self.pipeline_path)
-                print(f"[PredictionService] Successfully loaded preprocessor from {self.pipeline_path}")
+                try:
+                    self.pipeline = joblib.load(self.pipeline_path)
+                    print(f"[PredictionService] Successfully loaded preprocessor from {self.pipeline_path}")
+                except Exception as pe:
+                    print(f"[PredictionService] Failed loading preprocessor: {pe}")
 
             if os.path.exists(self.metrics_path):
-                with open(self.metrics_path, 'r', encoding='utf-8') as f:
-                    self.metrics = json.load(f)
-                print(f"[PredictionService] Successfully loaded metrics from {self.metrics_path}")
+                try:
+                    with open(self.metrics_path, 'r', encoding='utf-8') as f:
+                        self.metrics = json.load(f)
+                    print(f"[PredictionService] Successfully loaded metrics from {self.metrics_path}")
+                except Exception as mte:
+                    print(f"[PredictionService] Failed loading metrics: {mte}")
         except Exception as e:
-            print(f"[PredictionService] Error loading artifacts: {e}")
+            print(f"[PredictionService] Outer error loading artifacts: {e}")
 
     def predict(self, input_data: dict, selected_model_name: str = "Logistic Regression") -> dict:
         if not self.models or self.pipeline is None:
