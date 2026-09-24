@@ -108,10 +108,20 @@ class PredictionService:
             num_cols = ['Age', 'Income', 'LoanAmount', 'CreditScore', 'MonthsEmployed', 'NumCreditLines', 'InterestRate', 'LoanTerm', 'DTIRatio']
             cat_cols = ['Education', 'EmploymentType', 'MaritalStatus', 'HasMortgage', 'HasDependents', 'LoanPurpose', 'HasCoSigner']
             
+            categories = [
+                ["Bachelor's", 'High School', "Master's", 'PhD'],
+                ['Full-time', 'Part-time', 'Self-employed', 'Unemployed'],
+                ['Divorced', 'Married', 'Single'],
+                ['No', 'Yes'],
+                ['No', 'Yes'],
+                ['Auto', 'Business', 'Education', 'Home', 'Other'],
+                ['No', 'Yes']
+            ]
+            
             preprocessor = ColumnTransformer(
                 transformers=[
                     ('num', StandardScaler(), num_cols),
-                    ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols)
+                    ('cat', OneHotEncoder(categories=categories, handle_unknown='ignore', sparse_output=False), cat_cols)
                 ]
             )
             df_sample = pd.DataFrame([
@@ -150,15 +160,23 @@ class PredictionService:
         df_input = pd.DataFrame([clean_input])[feature_order]
         X_prep = self.pipeline.transform(df_input)
 
-        pred = int(model.predict(X_prep)[0])
+        n_expected = getattr(model, "n_features_in_", X_prep.shape[1])
+        if X_prep.shape[1] > n_expected:
+            X_prep_model = X_prep[:, :n_expected]
+        elif X_prep.shape[1] < n_expected:
+            X_prep_model = np.pad(X_prep, ((0, 0), (0, n_expected - X_prep.shape[1])), mode='constant')
+        else:
+            X_prep_model = X_prep
+
+        pred = int(model.predict(X_prep_model)[0])
         pred_label = "YES" if pred == 1 else "NO"
 
         probability = 0.50
         if hasattr(model, "predict_proba"):
-            probs = model.predict_proba(X_prep)[0]
+            probs = model.predict_proba(X_prep_model)[0]
             probability = float(probs[1])
         elif hasattr(model, "decision_function"):
-            decision_val = float(model.decision_function(X_prep)[0])
+            decision_val = float(model.decision_function(X_prep_model)[0])
             probability = 1.0 / (1.0 + np.exp(-decision_val))
 
         prob_pct = round(probability * 100, 2)
