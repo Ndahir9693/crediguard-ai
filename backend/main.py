@@ -28,6 +28,8 @@ app.include_router(dashboard_router)
 
 @app.get("/api/health", tags=["Health"])
 async def health_check():
+    if not prediction_service.models or prediction_service.pipeline is None:
+        prediction_service.load_artifacts()
     is_model_ready = len(prediction_service.models) > 0 and prediction_service.pipeline is not None
     return {
         "status": "healthy",
@@ -36,7 +38,8 @@ async def health_check():
         "modelLoaded": is_model_ready,
         "selectedModel": "Logistic Regression",
         "availableModels": list(prediction_service.models.keys()),
-        "metricsAvailable": prediction_service.metrics is not None
+        "metricsAvailable": prediction_service.metrics is not None,
+        "modelDir": prediction_service.model_dir
     }
 
 if __name__ == "__main__":
