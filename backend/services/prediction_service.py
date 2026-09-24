@@ -87,6 +87,10 @@ class PredictionService:
                 except Exception as pe:
                     print(f"[PredictionService] Failed loading preprocessor: {pe}")
 
+            if self.pipeline is None:
+                print(f"[PredictionService] Creating dynamic fallback preprocessing pipeline...")
+                self.pipeline = self._create_fallback_pipeline()
+
             if os.path.exists(self.metrics_path):
                 try:
                     with open(self.metrics_path, 'r', encoding='utf-8') as f:
@@ -97,10 +101,37 @@ class PredictionService:
         except Exception as e:
             print(f"[PredictionService] Outer error loading artifacts: {e}")
 
+    def _create_fallback_pipeline(self):
+        try:
+            from sklearn.compose import ColumnTransformer
+            from sklearn.preprocessing import StandardScaler, OneHotEncoder
+            num_cols = ['Age', 'Income', 'LoanAmount', 'CreditScore', 'MonthsEmployed', 'NumCreditLines', 'InterestRate', 'LoanTerm', 'DTIRatio']
+            cat_cols = ['Education', 'EmploymentType', 'MaritalStatus', 'HasMortgage', 'HasDependents', 'LoanPurpose', 'HasCoSigner']
+            
+            preprocessor = ColumnTransformer(
+                transformers=[
+                    ('num', StandardScaler(), num_cols),
+                    ('cat', OneHotEncoder(handle_unknown='ignore', sparse_output=False), cat_cols)
+                ]
+            )
+            df_sample = pd.DataFrame([
+                {'Age': 35, 'Income': 75000, 'LoanAmount': 20000, 'CreditScore': 710, 'MonthsEmployed': 48, 'NumCreditLines': 3, 'InterestRate': 9.5, 'LoanTerm': 36, 'DTIRatio': 0.25, 'Education': "Bachelor's", 'EmploymentType': "Full-time", 'MaritalStatus': "Single", 'HasMortgage': "No", 'HasDependents': "No", 'LoanPurpose': "Home", 'HasCoSigner': "No"},
+                {'Age': 50, 'Income': 120000, 'LoanAmount': 15000, 'CreditScore': 800, 'MonthsEmployed': 120, 'NumCreditLines': 2, 'InterestRate': 5.0, 'LoanTerm': 24, 'DTIRatio': 0.15, 'Education': "Master's", 'EmploymentType': "Full-time", 'MaritalStatus': "Married", 'HasMortgage': "Yes", 'HasDependents': "Yes", 'LoanPurpose': "Home", 'HasCoSigner': "Yes"},
+                {'Age': 22, 'Income': 25000, 'LoanAmount': 40000, 'CreditScore': 550, 'MonthsEmployed': 12, 'NumCreditLines': 6, 'InterestRate': 18.0, 'LoanTerm': 60, 'DTIRatio': 0.55, 'Education': "High School", 'EmploymentType': "Unemployed", 'MaritalStatus': "Divorced", 'HasMortgage': "No", 'HasDependents': "No", 'LoanPurpose': "Auto", 'HasCoSigner': "No"}
+            ])
+            preprocessor.fit(df_sample)
+            return preprocessor
+        except Exception as fe:
+            print(f"[PredictionService] Failed to fit fallback pipeline: {fe}")
+            return None
+
     def predict(self, input_data: dict, selected_model_name: str = "Logistic Regression") -> dict:
         if not self.models or self.pipeline is None:
             # Auto-retry loading artifacts in case of cold start or path shift
             self.load_artifacts()
+            
+        if self.pipeline is None:
+            self.pipeline = self._create_fallback_pipeline()
             
         if not self.models or self.pipeline is None:
             raise ValueError(f"ML Models or Preprocessing Pipeline is not loaded. Checked dir: '{self.model_dir}'. Loaded models: {list(self.models.keys())}, Pipeline loaded: {self.pipeline is not None}")
