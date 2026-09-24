@@ -8,8 +8,23 @@ from datetime import datetime
 
 class PredictionService:
     def __init__(self):
-        self.base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        self.model_dir = os.path.join(self.base_dir, "model")
+        # Resolve model directory using multiple candidate locations for serverless and local compatibility
+        candidate_dirs = [
+            os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "api", "model"),
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "model"),
+            os.path.join(os.getcwd(), "api", "model"),
+            os.path.join(os.getcwd(), "backend", "model"),
+            os.path.join(os.getcwd(), "model"),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model")),
+            os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "backend", "model")),
+        ]
+        
+        self.model_dir = candidate_dirs[0]
+        for cdir in candidate_dirs:
+            if os.path.exists(os.path.join(cdir, "preprocessing_pipeline.pkl")) or os.path.exists(os.path.join(cdir, "LogisticRegressionModel.pkl")):
+                self.model_dir = cdir
+                break
+                
         self.pipeline_path = os.path.join(self.model_dir, "preprocessing_pipeline.pkl")
         self.metrics_path = os.path.join(self.model_dir, "models_metrics.json")
         
@@ -24,6 +39,23 @@ class PredictionService:
     def load_artifacts(self):
         """Loads all 5 trained models, preprocessor, and metrics JSON"""
         try:
+            # Re-check model_dir if missing artifacts
+            candidate_dirs = [
+                self.model_dir,
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "api", "model"),
+                os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "model"),
+                os.path.join(os.getcwd(), "api", "model"),
+                os.path.join(os.getcwd(), "backend", "model"),
+                os.path.join(os.getcwd(), "model"),
+                os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "model")),
+            ]
+            for cdir in candidate_dirs:
+                if os.path.exists(os.path.join(cdir, "preprocessing_pipeline.pkl")):
+                    self.model_dir = cdir
+                    self.pipeline_path = os.path.join(cdir, "preprocessing_pipeline.pkl")
+                    self.metrics_path = os.path.join(cdir, "models_metrics.json")
+                    break
+
             model_files = {
                 "Logistic Regression": "LogisticRegressionModel.pkl",
                 "Decision Tree": "DecisionTreeModel.pkl",
@@ -55,7 +87,11 @@ class PredictionService:
 
     def predict(self, input_data: dict, selected_model_name: str = "Logistic Regression") -> dict:
         if not self.models or self.pipeline is None:
-            raise ValueError("ML Models or Preprocessing Pipeline is not loaded.")
+            # Auto-retry loading artifacts in case of cold start or path shift
+            self.load_artifacts()
+            
+        if not self.models or self.pipeline is None:
+            raise ValueError(f"ML Models or Preprocessing Pipeline is not loaded. Checked dir: '{self.model_dir}'. Loaded models: {list(self.models.keys())}, Pipeline loaded: {self.pipeline is not None}")
 
         model_name = selected_model_name if selected_model_name in self.models else list(self.models.keys())[0]
         model = self.models[model_name]
